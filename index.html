@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Einkaufsliste</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700&display=swap">
+<style>
+:root{--bg:#eef1f4;--paper:#fff;--ink:#1d2433;--mute:#8a93a3;--rule:#e3e7ee;--acc:#1f6f5c;--on:#fff;--bar:#e1e6ec;--tab:#cdd5df;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161d;--paper:#1a2029;--ink:#e8ecf2;--mute:#7c8697;--rule:#262d38;--acc:#4cc2a3;--on:#0b1f19;--bar:#0e1217;--tab:#262d38;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12161d;--paper:#1a2029;--ink:#e8ecf2;--mute:#7c8697;--rule:#262d38;--acc:#4cc2a3;--on:#0b1f19;--bar:#0e1217;--tab:#262d38;color-scheme:dark}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bar);z-index:10}
+#sheet{max-width:560px;margin:14px auto 0;padding:8px 18px 36px;background:var(--paper);border-radius:14px}
+@media (max-width:600px){#sheet{margin:0;border-radius:0;min-height:100vh}}
+#title{display:block;width:100%;border:0;background:transparent;color:var(--ink);font:700 28px inherit;font-family:inherit;padding:14px 0 10px;outline:none}
+.row,.low{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--rule)}
+.line{flex:1;min-width:0;font-size:18px;line-height:1.35;padding:11px 0;outline:none;overflow-wrap:anywhere}
+.line:empty::before{content:attr(data-ph);color:var(--mute)}
+.row input{appearance:none;-webkit-appearance:none;flex:none;width:24px;height:24px;margin:0;border:2px solid var(--mute);border-radius:7px;background:transparent;display:grid;place-content:center;cursor:pointer}
+.row input:checked{background:var(--acc);border-color:var(--acc)}
+.row input:checked::after{content:"";width:6px;height:11px;border:solid var(--on);border-width:0 2.5px 2.5px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.row.done .line{text-decoration:line-through;color:var(--mute)}
+#main.drop{outline:2px dashed var(--acc);outline-offset:4px;border-radius:6px}
+#clear{margin:14px 0 0;padding:8px 14px;border:0;border-radius:8px;background:var(--bar);color:var(--ink);font:600 14px inherit;font-family:inherit;cursor:pointer}
+h2{outline:none;margin:34px 0 2px;font-size:20px;font-weight:600;color:var(--mute)}
+.grip{flex:none;width:24px;align-self:stretch;display:grid;place-content:center;color:var(--mute);font-size:18px;letter-spacing:-3px;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+#ghost{position:fixed;display:none;pointer-events:none;z-index:20;padding:9px 16px;border-radius:10px;background:var(--acc);color:var(--on);font-size:17px;font-weight:600;transform:translate(-20px,-120%)}
+</style>
+</head>
+<body>
+<div id="sheet">
+  <input id="title" value="Einkaufsliste" aria-label="Titel">
+  <div id="main"></div>
+  <button id="clear">Erledigte löschen</button>
+  <h2 id="lowh" contenteditable="true" spellcheck="false">Bald nötig</h2>
+  <div id="low"></div>
+</div>
+<div id="ghost"></div>
+<script>
+const KEY='einkaufsliste-v1';
+let S=null;
+try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!S||!S.tabs||!S.tabs.length)S={active:0,tabs:[{name:'Laden',title:'Einkaufsliste',items:[{t:'',d:false}]}],low:[{t:''}]};
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const $=id=>document.getElementById(id);
+const tab=()=>S.tabs[0];
+
+function lineEl(text,ph,onInput,onEnter,onBack){
+  const d=document.createElement('div');
+  d.className='line';d.contentEditable='true';d.dataset.ph=ph;d.textContent=text;
+  d.oninput=()=>onInput(d.textContent);
+  d.onpaste=e=>{e.preventDefault();const s=(e.clipboardData||window.clipboardData).getData('text').replace(/\s*\n\s*/g,' ');document.execCommand('insertText',false,s)};
+  d.onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();onEnter()}
+    else if(e.key==='Backspace'&&d.textContent===''){e.preventDefault();onBack()}
+  };
+  return d;
+}
+
+function renderMain(f){
+  const el=$('main');el.innerHTML='';
+  const items=tab().items;
+  items.forEach((it,i)=>{
+    const row=document.createElement('div');
+    row.className='row'+(it.d?' done':'');
+    const cb=document.createElement('input');
+    cb.type='checkbox';cb.checked=it.d;cb.setAttribute('aria-label','Erledigt');
+    cb.onchange=()=>{it.d=cb.checked;save();renderMain()};
+    const ln=lineEl(it.t,'…',
+      v=>{it.t=v;save()},
+      ()=>{items.splice(i+1,0,{t:'',d:false});save();renderMain(i+1)},
+      ()=>{if(items.length>1){items.splice(i,1);save();renderMain(Math.max(0,i-1))}});
+    row.append(cb,ln);el.appendChild(row);
+  });
+  if(f!==undefined)el.children[f].querySelector('.line').focus();
+}
+
+function renderLow(f){
+  const el=$('low');el.innerHTML='';
+  S.low.forEach((it,i)=>{
+    const row=document.createElement('div');row.className='low';
+    const g=document.createElement('div');
+    g.className='grip';g.textContent='⋮⋮';g.title='Nach oben ziehen';
+    g.onpointerdown=e=>startDrag(e,g,i);
+    const ln=lineEl(it.t,'…',
+      v=>{it.t=v;save()},
+      ()=>{S.low.splice(i+1,0,{t:''});save();renderLow(i+1)},
+      ()=>{if(S.low.length>1){S.low.splice(i,1);save();renderLow(Math.max(0,i-1))}});
+    row.append(g,ln);el.appendChild(row);
+  });
+  if(f!==undefined)el.children[f].querySelector('.line').focus();
+}
+
+function startDrag(e,g,i){
+  const text=S.low[i].t.trim();
+  if(!text)return;
+  e.preventDefault();
+  g.setPointerCapture(e.pointerId);
+  const gh=$('ghost');gh.textContent=text;gh.style.display='block';
+  const above=y=>y<$('lowh').getBoundingClientRect().top;
+  const move=ev=>{gh.style.left=ev.clientX+'px';gh.style.top=ev.clientY+'px';$('main').classList.toggle('drop',above(ev.clientY))};
+  const end=ev=>{
+    g.removeEventListener('pointermove',move);
+    g.removeEventListener('pointerup',end);
+    g.removeEventListener('pointercancel',end);
+    gh.style.display='none';$('main').classList.remove('drop');
+    if(ev.type==='pointerup'&&above(ev.clientY)){
+      const items=tab().items,last=items[items.length-1];
+      if(last&&last.t==='')last.t=text;else items.push({t:text,d:false});
+      items.push({t:'',d:false});
+      S.low.splice(i,1);
+      if(!S.low.length)S.low.push({t:''});
+      save();
+    }
+    render();
+  };
+  g.addEventListener('pointermove',move);
+  g.addEventListener('pointerup',end);
+  g.addEventListener('pointercancel',end);
+  move(e);
+}
+
+$('title').oninput=e=>{tab().title=e.target.value;save()};
+$('lowh').oninput=e=>{S.lowTitle=e.target.textContent;save()};
+$('lowh').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();e.target.blur()}};
+$('lowh').onblur=e=>{if(!e.target.textContent.trim()){S.lowTitle='Bald nötig';e.target.textContent=S.lowTitle;save()}};
+$('clear').onclick=()=>{
+  const t=tab();
+  t.items=t.items.filter(x=>!x.d);
+  if(!t.items.length)t.items.push({t:'',d:false});
+  save();renderMain();
+};
+
+function render(){
+  $('title').value=tab().title;
+  $('lowh').textContent=S.lowTitle||'Bald nötig';
+  renderMain();renderLow();
+}
+render();
+try{const f=$('main').querySelector('.line');if(f)f.focus()}catch(e){}
+</script>
+</body>
+</html>
